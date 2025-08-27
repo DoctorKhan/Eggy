@@ -88,6 +88,7 @@
     let frameCount = 0;
     let soundReady = false;
     let lastFlapTime = 0; // Cooldown timer for flap sound
+let lastDefeatTime = 0; // Cooldown timer for defeat sound
 
     // --- Sound Engine ---
     const sound = {
@@ -126,14 +127,22 @@
         playDefeat: () => {
             if(soundReady) {
                 const now = Tone.now();
-                sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
+                // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
+                if (now > lastDefeatTime + 0.1) {
+                    sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
+                    lastDefeatTime = now;
+                }
             }
         },
         playEggCollect: () => { if(soundReady) sound.eggSynth.triggerAttackRelease('G5', '8n'); },
         playPlayerDefeat: () => {
             if(soundReady) {
                 const now = Tone.now();
-                sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
+                // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
+                if (now > lastDefeatTime + 0.1) {
+                    sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
+                    lastDefeatTime = now;
+                }
             }
         }
     };
