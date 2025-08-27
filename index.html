@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EggWar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #0a0a0a;
+            font-family: 'Press-Start-2P', cursive;
+            color: white;
+            overflow: hidden;
+        }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            border: 4px solid #444;
+            border-radius: 10px;
+            background: #111;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        }
+        canvas {
+            background-color: #000;
+            border: 2px solid #55e;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(85, 85, 238, 0.5);
+            max-width: 100%;
+            max-height: 80vh;
+            aspect-ratio: 4 / 3;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 15px;
+            font-size: 1em;
+            color: #ccc;
+        }
+        .score-board {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            color: #ffcc00;
+            text-shadow: 2px 2px #d40000;
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <div id="score-board" class="score-board">SCORE: 0 | WAVE: 1</div>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">Click Screen to Start Sound | Arrows: ← Left | → Right | ↑ Flap</div>
+</div>
+
+<script>
+    // --- Canvas and Context Setup ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreBoard = document.getElementById('score-board');
+
+    // --- Game Constants ---
+    const GRAVITY = 0.25;
+    const FLAP_FORCE = -6.5;
+    const MOVE_SPEED = 4;
+    const FRICTION = 0.92;
+    const RESPAWN_TIME = 2000; 
+    const EGG_HATCH_TIME = 5000;
+
+    // --- Game State ---
+    let platforms = [];
+    let player;
+    let enemies = [];
+    let eggs = [];
+    let particles = [];
+    let score = 0;
+    let wave = 1;
+    let frameCount = 0;
+    let soundReady = false;
+    let lastFlapTime = 0; // Cooldown timer for flap sound
+
+    // --- Sound Engine ---
+    const sound = {
+        flapSynth: new Tone.MembraneSynth({
+            pitchDecay: 0.01,
+            octaves: 4,
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 }
+        }).toDestination(),
+        defeatSynth: new Tone.NoiseSynth({
+            noise: { type: 'white' },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0 }
+        }).toDestination(),
+        eggSynth: new Tone.Synth({
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
+        }).toDestination(),
+        playerDefeatSynth: new Tone.MetalSynth({
+            frequency: 100,
+            envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
+            harmonicity: 5.1,
+            modulationIndex: 32,
+            resonance: 4000,
+            octaves: 1.5
+        }).toDestination(),
+
+        playFlap: () => {
+            if (!soundReady) return;
+            const now = Tone.now();
+            // Add a 50ms cooldown to prevent Tone.js errors from rapid calls
+            if (now > lastFlapTime + 0.05) {
+                sound.flapSynth.triggerAttackRelease('C2', '8n', now);
+                lastFlapTime = now;
+            }
+        },
+        playDefeat: () => { if(soundReady) sound.defeatSynth.triggerAttackRelease('0.1'); },
+        playEggCollect: () => { if(soundReady) sound.eggSynth.triggerAttackRelease('G5', '8n'); },
+        playPlayerDefeat: () => { if(soundReady) sound.playerDefeatSynth.triggerAttackRelease(0.1); }
+    };
+    
+    canvas.addEventListener('click', async () => {
+        if (!soundReady) {
+            await Tone.start();
+            soundReady = true;
+            console.log('Audio is ready');
+        }
+    });
+
+
+    // --- Utility Functions ---
+    function randomRange(min, max) { return Math.random() * (max - min) + min; }
+
+    // --- Game Object Classes ---
+    class Particle {
+        constructor(x, y, color) {
+            this.x = x; this.y = y; this.color = color;
+            this.size = Math.random() * 5 + 2;
+            this.dx = randomRange(-3, 3); this.dy = randomRange(-5, 2);
+            this.life = 1;
+        }
+        update() {
+            this.x += this.dx; this.y += this.dy;
+            this.dy += GRAVITY * 0.5; this.life -= 0.03;
+        }
+        draw() {
+            ctx.fillStyle = `rgba(${this.color}, ${this.life})`;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    
+    class Egg {
+        constructor(x, y) {
+            this.x = x; this.y = y; this.width = 15; this.height = 20;
+            this.dx = randomRange(-2, 2); this.dy = -2;
+            this.hatchTimer = EGG_HATCH_TIME;
+        }
+        update() {
+            this.dy += GRAVITY; this.x += this.dx; this.y += this.dy;
+            this.dx *= 0.98;
+            platforms.forEach(p => {
+                 if (this.y+this.height>p.y && this.y<p.y+p.height && this.x+this.width>p.x && this.x<p.x+p.width) {
+                    if (this.dy > 0) { this.y = p.y - this.height; this.dy *= -0.5; }
+                }
+            });
+            if (this.y > canvas.height - this.height - 20) { this.y = canvas.height - this.height - 20; this.dy *= -0.5; }
+            if (this.x > canvas.width) this.x = 0; if (this.x < 0) this.x = canvas.width;
+            this.hatchTimer -= 1000 / 60;
+            if (this.hatchTimer <= 0) this.hatch();
+        }
+        draw() {
+            ctx.fillStyle = '#E0E0E0'; ctx.strokeStyle = '#A0A0A0'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, this.height / 2, 0, 0, Math.PI * 2);
+            ctx.fill(); ctx.stroke();
+        }
+        hatch() {
+            enemies.push(new Knight(this.x, this.y, 'enemy'));
+            const index = eggs.indexOf(this);
+            if (index > -1) eggs.splice(index, 1);
+        }
+    }
+
+    class Knight {
+        constructor(x, y, type) {
+            this.x = x; this.y = y; this.width = 40; this.height = 45;
+            this.dx = 0; this.dy = 0; this.type = type;
+            this.riderColor = type === 'player' ? '#f0a048' : '#c0c0c0';
+            this.birdBodyColor = type === 'player' ? '#D4AC0D' : '#50c878';
+            this.birdWingColor = type === 'player' ? '#F1C40F' : '#58D68D';
+            this.lanceColor = type === 'player' ? '#ffcc00' : '#e0e0e0';
+            this.onPlatform = false; this.direction = 1; this.isDefeated = false;
+            this.respawnTimer = 0; this.flapFrame = 0; this.walking = false;
+        }
+
+        draw() {
+            if (this.isDefeated) return;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            if (this.direction === -1) ctx.scale(-1, 1);
+
+            const isWalking = this.onPlatform && Math.abs(this.dx) > 0.1;
+            const legFrame = isWalking ? Math.sin(frameCount * 0.5) * 5 : 0;
+
+            // Legs
+            ctx.strokeStyle = '#4A235A'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-5, 10); ctx.lineTo(-8 + legFrame, 20); // Back leg
+            ctx.moveTo(5, 10); ctx.lineTo(8 - legFrame, 20); // Front leg
+            ctx.stroke();
+            
+            // Bird Body
+            ctx.fillStyle = this.birdBodyColor;
+            ctx.beginPath();
+            ctx.ellipse(0, 5, 18, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Wings
+            const wingY = this.walking ? 0 : Math.sin(this.flapFrame) * 8;
+            ctx.fillStyle = this.birdWingColor;
+            ctx.beginPath();
+            ctx.moveTo(-10, 5);
+            ctx.quadraticCurveTo(0, 5 + wingY, 15, 5);
+            ctx.quadraticCurveTo(0, 15 + wingY, -10, 5);
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = this.birdBodyColor;
+            ctx.beginPath();
+            ctx.arc(-15, -5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            // Beak
+            ctx.fillStyle = '#F39C12';
+            ctx.beginPath();
+            ctx.moveTo(-22, -5); ctx.lineTo(-32, -7); ctx.lineTo(-32, -3); ctx.closePath();
+            ctx.fill();
+
+            // Rider
+            ctx.fillStyle = this.riderColor;
+            ctx.fillRect(-5, -25, 10, 20); // Torso
+            ctx.beginPath();
+            ctx.arc(0, -30, 7, 0, Math.PI * 2); // Head
+            ctx.fill();
+
+            // Lance
+            ctx.strokeStyle = this.lanceColor; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(10, -15); ctx.lineTo(40, -15);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        update() {
+            if (this.isDefeated) {
+                this.respawnTimer -= 1000 / 60;
+                if (this.respawnTimer <= 0) this.respawn();
+                return;
+            }
+
+            this.dy += GRAVITY; this.dx *= FRICTION;
+            this.x += this.dx; this.y += this.dy;
+            this.flapFrame += 0.3;
+            if (Math.abs(this.dx) > 0.1) this.direction = this.dx > 0 ? 1 : -1;
+            if (this.x > canvas.width + this.width/2) this.x = -this.width/2;
+            if (this.x < -this.width/2) this.x = canvas.width + this.width/2;
+
+            this.onPlatform = false;
+            platforms.forEach(p => {
+                if (this.y+this.height/2>p.y && this.y-this.height/2<p.y+p.height && this.x+this.width/2>p.x && this.x-this.width/2<p.x+p.width) {
+                    if (this.dy > 0 && (this.y + this.height/2 - this.dy) <= p.y) {
+                        this.y = p.y - this.height/2; this.dy = 0; this.onPlatform = true;
+                    }
+                }
+            });
+
+            if (this.y > canvas.height - this.height/2 - 20) {
+                if(this.type === 'player') this.defeat();
+                else { const index = enemies.indexOf(this); if (index > -1) enemies.splice(index, 1); }
+                createExplosion(this.x, this.y, '255, 80, 80');
+            }
+        }
+
+        flap() {
+            if (this.onPlatform || this.dy > -FLAP_FORCE * 0.5) {
+                this.dy = FLAP_FORCE;
+                sound.playFlap();
+            }
+        }
+
+        defeat() {
+            if (this.type === 'player') {
+                this.isDefeated = true; this.respawnTimer = RESPAWN_TIME;
+                createExplosion(this.x, this.y, '240, 160, 72');
+                score = Math.max(0, score - 50);
+                sound.playPlayerDefeat();
+                updateScore();
+            } else {
+                eggs.push(new Egg(this.x, this.y));
+                const index = enemies.indexOf(this);
+                if (index > -1) enemies.splice(index, 1);
+                createExplosion(this.x, this.y, '80, 200, 120');
+                sound.playDefeat();
+            }
+        }
+
+        respawn() {
+            this.isDefeated = false; this.x = Math.random() * canvas.width; this.y = 50;
+            this.dx = 0; this.dy = 0;
+        }
+    }
+
+    function updateEnemyAI(enemy, target) {
+        if (enemy.isDefeated) return;
+        // More varied AI
+        if (Math.random() < 0.02) enemy.flap(); // Random flap
+        if (target.y < enemy.y && enemy.y > canvas.height * 0.5 && Math.random() < 0.03) enemy.flap(); // Flap if player is above
+
+        const targetX = target.isDefeated ? canvas.width / 2 : target.x;
+        if (targetX > enemy.x) enemy.dx += 0.15 + Math.random() * 0.1;
+        else enemy.dx -= 0.15 + Math.random() * 0.1;
+        enemy.dx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, enemy.dx));
+    }
+
+    function checkCollisions() {
+        enemies.forEach(enemy => {
+            if (player.isDefeated || enemy.isDefeated) return;
+            const dx = player.x - enemy.x; const dy = player.y - enemy.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            if (distance < player.width/2 + enemy.width/2) {
+                if (player.y < enemy.y - 5) {
+                    score += 100; enemy.defeat(); player.dy = -4;
+                } else {
+                    player.defeat(); enemy.dy = -4;
+                }
+                updateScore();
+            }
+        });
+        eggs.forEach((egg, index) => {
+             const dx = player.x-(egg.x+egg.width/2); const dy = player.y-(egg.y+egg.height/2);
+             const distance = Math.sqrt(dx*dx + dy*dy);
+             if (distance < player.width/2 + egg.width) {
+                 score += 25; eggs.splice(index, 1);
+                 sound.playEggCollect();
+                 updateScore();
+             }
+        });
+    }
+    
+    function createExplosion(x, y, color) {
+        for (let i = 0; i < 30; i++) particles.push(new Particle(x, y, color));
+    }
+
+    function updateScore() {
+        scoreBoard.textContent = `SCORE: ${score} | WAVE: ${wave}`;
+    }
+    
+    function checkWaveCompletion() {
+        if (enemies.length === 0 && eggs.length === 0) {
+            wave++; startWave(wave); updateScore();
+        }
+    }
+
+    function startWave(waveNumber) {
+        enemies = []; eggs = [];
+        const enemyCount = 2 + waveNumber;
+        for (let i = 0; i < enemyCount; i++) {
+            enemies.push(new Knight(randomRange(50, canvas.width - 50), randomRange(50, 200), 'enemy'));
+        }
+    }
+
+    function init() {
+        canvas.height = 600; canvas.width = 800;
+        platforms = [
+            { x: 100, y: canvas.height - 150, width: 200, height: 20 },
+            { x: canvas.width - 300, y: canvas.height - 150, width: 200, height: 20 },
+            { x: canvas.width / 2 - 150, y: canvas.height / 2, width: 300, height: 20 },
+            { x: 0, y: 200, width: 150, height: 20 },
+            { x: canvas.width - 150, y: 200, width: 150, height: 20 }
+        ];
+        player = new Knight(100, 100, 'player');
+        score = 0; wave = 1; startWave(wave); updateScore();
+    }
+
+    function gameLoop() {
+        frameCount++;
+        handleInput();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#d44';
+        ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+        
+        ctx.fillStyle = '#7b583f';
+        platforms.forEach(p => { ctx.fillRect(p.x, p.y, p.width, p.height); });
+
+        player.update(); player.draw();
+        enemies.forEach(e => { updateEnemyAI(e, player); e.update(); e.draw(); });
+        eggs.forEach(e => { e.update(); e.draw(); });
+        particles.forEach((p, i) => { p.update(); p.draw(); if (p.life <= 0) particles.splice(i, 1); });
+
+        checkCollisions(); checkWaveCompletion();
+        requestAnimationFrame(gameLoop);
+    }
+
+    const keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false };
+    window.addEventListener('keydown', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = true; } });
+    window.addEventListener('keyup', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = false; } });
+    
+    function handleInput() {
+        if (player.isDefeated) return;
+        if (keys.ArrowUp) player.flap();
+        if (keys.ArrowLeft) player.dx -= 0.8;
+        if (keys.ArrowRight) player.dx += 0.8;
+        player.dx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, player.dx));
+    }
+
+    window.addEventListener('resize', init);
+    init();
+    gameLoop();
+
+</script>
+</body>
+</html>
