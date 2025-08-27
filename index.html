@@ -123,11 +123,34 @@
                 lastFlapTime = now;
             }
         },
-        playDefeat: () => { if(soundReady) sound.defeatSynth.triggerAttackRelease('0.1'); },
+        playDefeat: () => {
+            if(soundReady) {
+                const now = Tone.now();
+                sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
+            }
+        },
         playEggCollect: () => { if(soundReady) sound.eggSynth.triggerAttackRelease('G5', '8n'); },
-        playPlayerDefeat: () => { if(soundReady) sound.playerDefeatSynth.triggerAttackRelease(0.1); }
+        playPlayerDefeat: () => {
+            if(soundReady) {
+                const now = Tone.now();
+                sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
+            }
+        }
     };
     
+    // Try to start audio automatically on page load
+    window.addEventListener('DOMContentLoaded', async () => {
+        if (!soundReady) {
+            try {
+                await Tone.start();
+                soundReady = true;
+                console.log('Audio is ready');
+            } catch (e) {
+                console.warn('Audio auto-start blocked by browser. Click to enable.');
+            }
+        }
+    });
+    // Fallback: still allow click to start audio if needed
     canvas.addEventListener('click', async () => {
         if (!soundReady) {
             await Tone.start();
