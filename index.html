@@ -89,38 +89,53 @@
     let soundReady = false;
     let lastFlapTime = 0; // Cooldown timer for flap sound
 let lastDefeatTime = 0; // Cooldown timer for defeat sound
-
     // --- Sound Engine ---
+    // Create reverb effect
+    const reverb = new Tone.Reverb({ decay: 2, preDelay: 0.1 }).toDestination();
+    // Create synths and connect to reverb
+    const flapSynth = new Tone.MembraneSynth({
+        pitchDecay: 0.01,
+        octaves: 4,
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 }
+    }).connect(reverb);
+    const defeatSynth = new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: 0.005, decay: 0.1, sustain: 0 }
+    }).connect(reverb);
+    const defeatLayerSynth = new Tone.Synth({
+        oscillator: { type: 'square' },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.05 }
+    }).connect(reverb);
+    const eggSynth = new Tone.Synth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
+    }).connect(reverb);
+    const playerDefeatSynth = new Tone.MetalSynth({
+        frequency: 100,
+        envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
+        harmonicity: 5.1,
+        modulationIndex: 32,
+        resonance: 4000,
+        octaves: 1.5
+    }).connect(reverb);
+
     const sound = {
-        flapSynth: new Tone.MembraneSynth({
-            pitchDecay: 0.01,
-            octaves: 4,
-            oscillator: { type: 'sine' },
-            envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 }
-        }).toDestination(),
-        defeatSynth: new Tone.NoiseSynth({
-            noise: { type: 'white' },
-            envelope: { attack: 0.005, decay: 0.1, sustain: 0 }
-        }).toDestination(),
-        eggSynth: new Tone.Synth({
-            oscillator: { type: 'triangle' },
-            envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
-        }).toDestination(),
-        playerDefeatSynth: new Tone.MetalSynth({
-            frequency: 100,
-            envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
-            harmonicity: 5.1,
-            modulationIndex: 32,
-            resonance: 4000,
-            octaves: 1.5
-        }).toDestination(),
+        flapSynth,
+        defeatSynth,
+        defeatLayerSynth,
+        eggSynth,
+        playerDefeatSynth,
 
         playFlap: () => {
             if (!soundReady) return;
             const now = Tone.now();
             // Add a 50ms cooldown to prevent Tone.js errors from rapid calls
             if (now > lastFlapTime + 0.05) {
-                sound.flapSynth.triggerAttackRelease('C2', '8n', now);
+                // Randomize pitch and velocity
+                const note = Math.random() > 0.5 ? 'C2' : 'D2';
+                const velocity = 0.7 + Math.random() * 0.3;
+                sound.flapSynth.triggerAttackRelease(note, '8n', now, velocity);
                 lastFlapTime = now;
             }
         },
@@ -129,17 +144,32 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
                 const now = Tone.now();
                 // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
                 if (now > lastDefeatTime + 0.1) {
+                    // Layer defeat sound with synth
                     sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
+                    // Randomize pitch for layer
+                    const defeatNote = Math.random() > 0.5 ? 'C3' : 'G2';
+                    sound.defeatLayerSynth.triggerAttackRelease(defeatNote, '16n', now, 0.6 + Math.random() * 0.4);
                     lastDefeatTime = now;
                 }
             }
         },
-        playEggCollect: () => { if(soundReady) sound.eggSynth.triggerAttackRelease('G5', '8n'); },
+        playEggCollect: () => {
+            if(soundReady) {
+                const now = Tone.now();
+                // Randomize note and velocity for variety
+                const notes = ['G5', 'A5', 'E5'];
+                const note = notes[Math.floor(Math.random() * notes.length)];
+                const velocity = 0.7 + Math.random() * 0.3;
+                sound.eggSynth.triggerAttackRelease(note, '8n', now, velocity);
+            }
+        },
         playPlayerDefeat: () => {
             if(soundReady) {
                 const now = Tone.now();
                 // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
                 if (now > lastDefeatTime + 0.1) {
+                    // Randomize frequency for variety
+                    sound.playerDefeatSynth.frequency.value = 80 + Math.random() * 40;
                     sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
                     lastDefeatTime = now;
                 }
