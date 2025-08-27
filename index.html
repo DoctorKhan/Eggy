@@ -152,13 +152,17 @@ let playerMegaFlapTimer = 0;
             if(soundReady) {
                 const now = Tone.now();
                 // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
-                if (now > lastDefeatTime + 0.1) {
-                    // Layer defeat sound with synth
-                    sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
-                    // Randomize pitch for layer
-                    const defeatNote = Math.random() > 0.5 ? 'C3' : 'G2';
-                    sound.defeatLayerSynth.triggerAttackRelease(defeatNote, '16n', now, 0.6 + Math.random() * 0.4);
-                    lastDefeatTime = now;
+                if (now > lastDefeatTime + 0.1 && now > lastDefeatTime) {
+                    try {
+                        sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
+                        // Randomize pitch for layer
+                        const defeatNote = Math.random() > 0.5 ? 'C3' : 'G2';
+                        sound.defeatLayerSynth.triggerAttackRelease(defeatNote, '16n', now, 0.6 + Math.random() * 0.4);
+                        lastDefeatTime = now;
+                    } catch (e) {
+                        // Prevent crash, skip sound if Tone.js throws
+                        lastDefeatTime = now;
+                    }
                 }
             }
         },
@@ -176,11 +180,15 @@ let playerMegaFlapTimer = 0;
             if(soundReady) {
                 const now = Tone.now();
                 // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
-                if (now > lastDefeatTime + 0.1) {
-                    // Randomize frequency for variety
-                    sound.playerDefeatSynth.frequency.value = 80 + Math.random() * 40;
-                    sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
-                    lastDefeatTime = now;
+                if (now > lastDefeatTime + 0.1 && now > lastDefeatTime) {
+                    try {
+                        sound.playerDefeatSynth.frequency.value = 80 + Math.random() * 40;
+                        sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
+                        lastDefeatTime = now;
+                    } catch (e) {
+                        // Prevent crash, skip sound if Tone.js throws
+                        lastDefeatTime = now;
+                    }
                 }
             }
         }
