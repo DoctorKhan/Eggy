@@ -497,7 +497,13 @@ class PowerUp {
                     score += points; enemy.defeat(); player.dy = -4;
                 } else {
                     if (!playerShielded) {
-                        player.defeat();
+                        lives--;
+                        updateScore();
+                        if (lives <= 0) {
+                            gameOver = true;
+                        } else {
+                            player.defeat();
+                        }
                     }
                     enemy.dy = -4;
                 }
