@@ -91,6 +91,12 @@
     let lastFlapTime = 0; // Cooldown timer for flap sound
     let lastDefeatTime = 0; // Cooldown timer for defeat sound
     let playerSpeedBoost = 1;
+let playerShielded = false;
+let playerShieldTimer = 0;
+let playerDoublePoints = false;
+let playerDoubleTimer = 0;
+let playerMegaFlap = false;
+let playerMegaFlapTimer = 0;
     let speedBoostTimer = 0;
     // --- Sound Engine ---
     // Create reverb effect
@@ -256,9 +262,9 @@
     }
 
 class PowerUp {
-    constructor(x, y) {
+    constructor(x, y, type) {
         this.x = x; this.y = y; this.size = 18;
-        this.type = 'speed'; // Only speed for now
+        this.type = type;
         this.dy = -2;
     }
     update() {
@@ -291,14 +297,20 @@ class PowerUp {
         ctx.save();
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = '#00eaff';
-        ctx.shadowColor = '#00eaff';
+        // Color and label by type
+        let color = '#00eaff', label = 'S';
+        if (this.type === 'shield') { color = '#ffeb3b'; label = 'D'; }
+        if (this.type === 'double') { color = '#ff4081'; label = '2x'; }
+        if (this.type === 'megaflap') { color = '#8bc34a'; label = 'F'; }
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
         ctx.shadowBlur = 10;
         ctx.fill();
         ctx.restore();
         ctx.font = 'bold 12px sans-serif';
         ctx.fillStyle = '#fff';
-        ctx.fillText('S', this.x - 5, this.y + 5);
+        ctx.textAlign = 'center';
+        ctx.fillText(label, this.x, this.y + 5);
     }
 }
 
@@ -453,10 +465,11 @@ class PowerUp {
             });
         }
 
-        const targetX = target.isDefeated ? canvas.width / 2 : target.x;
-        if (targetX > enemy.x) enemy.dx += 0.15 + Math.random() * 0.1;
-        else enemy.dx -= 0.15 + Math.random() * 0.1;
-        enemy.dx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, enemy.dx));
+    const targetX = target.isDefeated ? canvas.width / 2 : target.x;
+    const speed = (enemy.speedBoost || 1);
+    if (targetX > enemy.x) enemy.dx += (0.15 + Math.random() * 0.1) * speed;
+    else enemy.dx -= (0.15 + Math.random() * 0.1) * speed;
+    enemy.dx = Math.max(-MOVE_SPEED * speed, Math.min(MOVE_SPEED * speed, enemy.dx));
     }
 
     function checkCollisions() {
@@ -466,9 +479,14 @@ class PowerUp {
             const distance = Math.sqrt(dx*dx + dy*dy);
             if (distance < player.width/2 + enemy.width/2) {
                 if (player.y < enemy.y - 5) {
-                    score += 100; enemy.defeat(); player.dy = -4;
+                    let points = 100;
+                    if (playerDoublePoints) points *= 2;
+                    score += points; enemy.defeat(); player.dy = -4;
                 } else {
-                    player.defeat(); enemy.dy = -4;
+                    if (!playerShielded) {
+                        player.defeat();
+                    }
+                    enemy.dy = -4;
                 }
                 updateScore();
             }
@@ -492,6 +510,18 @@ class PowerUp {
                     playerSpeedBoost = 2;
                     speedBoostTimer = 300; // frames (~5s)
                 }
+                if (pu.type === 'shield') {
+                    playerShielded = true;
+                    playerShieldTimer = 300;
+                }
+                if (pu.type === 'double') {
+                    playerDoublePoints = true;
+                    playerDoubleTimer = 300;
+                }
+                if (pu.type === 'megaflap') {
+                    playerMegaFlap = true;
+                    playerMegaFlapTimer = 200;
+                }
                 powerUps.splice(idx, 1);
             }
         });
@@ -514,24 +544,35 @@ class PowerUp {
     function startWave(waveNumber) {
     enemies = []; eggs = [];
     powerUps = [];
-        const enemyCount = 2 + waveNumber;
+        // Increase enemy count and speed with wave
+        const enemyCount = 2 + waveNumber + Math.floor(waveNumber/2);
+        const enemySpeedBoost = 1 + waveNumber * 0.1;
         // Spread out spawn positions horizontally
         const minX = 50, maxX = canvas.width - 50;
         const spacing = (maxX - minX) / Math.max(1, enemyCount - 1);
         for (let i = 0; i < enemyCount; i++) {
             let x = minX + i * spacing + randomRange(-20, 20);
             let y = randomRange(50, 200);
-            enemies.push(new Knight(x, y, 'enemy'));
+            const enemy = new Knight(x, y, 'enemy');
+            enemy.speedBoost = enemySpeedBoost;
+            enemies.push(enemy);
         }
-        // Spawn 1-2 power-ups per wave
-        const powerUpCount = Math.floor(Math.random() * 2) + 1;
+    // Power-ups increase with wave number to balance difficulty
+    const powerUpCount = 1 + Math.floor(waveNumber / 2);
+        // Unlock more power-up types as waves increase
+        let types = ['speed'];
+        if (waveNumber > 2) types.push('shield');
+        if (waveNumber > 4) types.push('double');
+        if (waveNumber > 6) types.push('megaflap');
         for (let i = 0; i < powerUpCount; i++) {
             // Pick a random platform
             const platform = platforms[Math.floor(Math.random() * platforms.length)];
             // Place power-up randomly along platform width
             let x = randomRange(platform.x + 20, platform.x + platform.width - 20);
             let y = platform.y - 18; // 18 is power-up radius, so it sits on top
-            powerUps.push(new PowerUp(x, y));
+            // Pick a random type from unlocked types
+            let type = types[Math.floor(Math.random() * types.length)];
+            powerUps.push(new PowerUp(x, y, type));
         }
     }
 
@@ -549,6 +590,19 @@ class PowerUp {
     }
 
     function gameLoop() {
+        // Power-up timers
+        if (playerShielded) {
+            playerShieldTimer--;
+            if (playerShieldTimer <= 0) playerShielded = false;
+        }
+        if (playerDoublePoints) {
+            playerDoubleTimer--;
+            if (playerDoubleTimer <= 0) playerDoublePoints = false;
+        }
+        if (playerMegaFlap) {
+            playerMegaFlapTimer--;
+            if (playerMegaFlapTimer <= 0) playerMegaFlap = false;
+        }
         frameCount++;
         handleInput();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -580,7 +634,14 @@ class PowerUp {
     
     function handleInput() {
     if (player.isDefeated) return;
-    if (keys.ArrowUp) player.flap();
+        if (keys.ArrowUp) {
+            if (playerMegaFlap) {
+                player.dy = FLAP_FORCE * 1.7;
+                sound.playFlap();
+            } else {
+                player.flap();
+            }
+        }
     if (keys.ArrowLeft) player.dx -= 0.8 * playerSpeedBoost;
     if (keys.ArrowRight) player.dx += 0.8 * playerSpeedBoost;
     player.dx = Math.max(-MOVE_SPEED * playerSpeedBoost, Math.min(MOVE_SPEED * playerSpeedBoost, player.dx));
