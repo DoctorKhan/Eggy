@@ -658,6 +658,15 @@ class PowerUp {
     window.addEventListener('keyup', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = false; } });
     
     function handleInput() {
+        // Restart game if game over
+        if (gameOver && keys['r']) {
+            lives = 3;
+            score = 0;
+            wave = 1;
+            gameOver = false;
+            updateScore();
+            init();
+        }
     if (player.isDefeated) return;
         if (keys.ArrowUp) {
             if (playerMegaFlap) {
