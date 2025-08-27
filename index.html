@@ -110,12 +110,14 @@ let playerMegaFlapTimer = 0;
     }).connect(reverb);
     const defeatSynth = new Tone.NoiseSynth({
         noise: { type: 'white' },
-        envelope: { attack: 0.005, decay: 0.1, sustain: 0 }
+        envelope: { attack: 0.01, decay: 0.08, sustain: 0, release: 0.05 }
     }).connect(reverb);
+    defeatSynth.volume.value = -12;
     const defeatLayerSynth = new Tone.Synth({
         oscillator: { type: 'square' },
-        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.05 }
+        envelope: { attack: 0.02, decay: 0.08, sustain: 0, release: 0.05 }
     }).connect(reverb);
+    defeatLayerSynth.volume.value = -10;
     const eggSynth = new Tone.Synth({
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
