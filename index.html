@@ -80,6 +80,7 @@
     // --- Game State ---
     let platforms = [];
     let player;
+    let powerUps = [];
     let enemies = [];
     let eggs = [];
     let particles = [];
@@ -88,7 +89,9 @@
     let frameCount = 0;
     let soundReady = false;
     let lastFlapTime = 0; // Cooldown timer for flap sound
-let lastDefeatTime = 0; // Cooldown timer for defeat sound
+    let lastDefeatTime = 0; // Cooldown timer for defeat sound
+    let playerSpeedBoost = 1;
+    let speedBoostTimer = 0;
     // --- Sound Engine ---
     // Create reverb effect
     const reverb = new Tone.Reverb({ decay: 2, preDelay: 0.1 }).toDestination();
@@ -251,6 +254,53 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
             if (index > -1) eggs.splice(index, 1);
         }
     }
+
+class PowerUp {
+    constructor(x, y) {
+        this.x = x; this.y = y; this.size = 18;
+        this.type = 'speed'; // Only speed for now
+        this.dy = -2;
+    }
+    update() {
+        this.dy += GRAVITY; this.y += this.dy;
+        // Platform collision
+        let onPlatform = false;
+        for (let p of platforms) {
+            if (
+                this.x > p.x && this.x < p.x + p.width &&
+                this.y + this.size > p.y && this.y < p.y + p.height
+            ) {
+                // Rest on top of platform
+                this.y = p.y - this.size;
+                this.dy = 0;
+                onPlatform = true;
+                break;
+            }
+        }
+        // Stop at top of lava if not on platform
+        if (!onPlatform) {
+            const floorY = canvas.height - 20 - this.size;
+            if (this.y > floorY) {
+                this.y = floorY;
+                this.dy = 0;
+            }
+        }
+        if (this.x > canvas.width) this.x = 0; if (this.x < 0) this.x = canvas.width;
+    }
+    draw() {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = '#00eaff';
+        ctx.shadowColor = '#00eaff';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('S', this.x - 5, this.y + 5);
+    }
+}
 
     class Knight {
         constructor(x, y, type) {
@@ -432,6 +482,19 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
                  updateScore();
              }
         });
+        // Power-up collision
+        powerUps.forEach((pu, idx) => {
+            const dx = player.x - pu.x;
+            const dy = player.y - pu.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < player.width/2 + pu.size) {
+                if (pu.type === 'speed') {
+                    playerSpeedBoost = 2;
+                    speedBoostTimer = 300; // frames (~5s)
+                }
+                powerUps.splice(idx, 1);
+            }
+        });
     }
     
     function createExplosion(x, y, color) {
@@ -449,7 +512,8 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
     }
 
     function startWave(waveNumber) {
-        enemies = []; eggs = [];
+    enemies = []; eggs = [];
+    powerUps = [];
         const enemyCount = 2 + waveNumber;
         // Spread out spawn positions horizontally
         const minX = 50, maxX = canvas.width - 50;
@@ -458,6 +522,16 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
             let x = minX + i * spacing + randomRange(-20, 20);
             let y = randomRange(50, 200);
             enemies.push(new Knight(x, y, 'enemy'));
+        }
+        // Spawn 1-2 power-ups per wave
+        const powerUpCount = Math.floor(Math.random() * 2) + 1;
+        for (let i = 0; i < powerUpCount; i++) {
+            // Pick a random platform
+            const platform = platforms[Math.floor(Math.random() * platforms.length)];
+            // Place power-up randomly along platform width
+            let x = randomRange(platform.x + 20, platform.x + platform.width - 20);
+            let y = platform.y - 18; // 18 is power-up radius, so it sits on top
+            powerUps.push(new PowerUp(x, y));
         }
     }
 
@@ -485,9 +559,15 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
         ctx.fillStyle = '#7b583f';
         platforms.forEach(p => { ctx.fillRect(p.x, p.y, p.width, p.height); });
 
+        // Power-up timer logic
+        if (playerSpeedBoost > 1) {
+            speedBoostTimer--;
+            if (speedBoostTimer <= 0) playerSpeedBoost = 1;
+        }
         player.update(); player.draw();
         enemies.forEach(e => { updateEnemyAI(e, player); e.update(); e.draw(); });
         eggs.forEach(e => { e.update(); e.draw(); });
+        powerUps.forEach(pu => { pu.update(); pu.draw(); });
         particles.forEach((p, i) => { p.update(); p.draw(); if (p.life <= 0) particles.splice(i, 1); });
 
         checkCollisions(); checkWaveCompletion();
@@ -499,11 +579,11 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
     window.addEventListener('keyup', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = false; } });
     
     function handleInput() {
-        if (player.isDefeated) return;
-        if (keys.ArrowUp) player.flap();
-        if (keys.ArrowLeft) player.dx -= 0.8;
-        if (keys.ArrowRight) player.dx += 0.8;
-        player.dx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, player.dx));
+    if (player.isDefeated) return;
+    if (keys.ArrowUp) player.flap();
+    if (keys.ArrowLeft) player.dx -= 0.8 * playerSpeedBoost;
+    if (keys.ArrowRight) player.dx += 0.8 * playerSpeedBoost;
+    player.dx = Math.max(-MOVE_SPEED * playerSpeedBoost, Math.min(MOVE_SPEED * playerSpeedBoost, player.dx));
     }
 
     window.addEventListener('resize', init);
