@@ -387,6 +387,22 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
         if (Math.random() < 0.02) enemy.flap(); // Random flap
         if (target.y < enemy.y && enemy.y > canvas.height * 0.5 && Math.random() < 0.03) enemy.flap(); // Flap if player is above
 
+        // --- Collision avoidance ---
+        // Allow clustering if global flag is set
+        if (!window.allowEnemyClustering) {
+            enemies.forEach(other => {
+                if (other !== enemy && !other.isDefeated) {
+                    const dx = enemy.x - other.x;
+                    const dy = enemy.y - other.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 40) { // Repel if too close
+                        enemy.dx += dx * 0.01;
+                        enemy.dy += dy * 0.01;
+                    }
+                }
+            });
+        }
+
         const targetX = target.isDefeated ? canvas.width / 2 : target.x;
         if (targetX > enemy.x) enemy.dx += 0.15 + Math.random() * 0.1;
         else enemy.dx -= 0.15 + Math.random() * 0.1;
@@ -435,8 +451,13 @@ let lastDefeatTime = 0; // Cooldown timer for defeat sound
     function startWave(waveNumber) {
         enemies = []; eggs = [];
         const enemyCount = 2 + waveNumber;
+        // Spread out spawn positions horizontally
+        const minX = 50, maxX = canvas.width - 50;
+        const spacing = (maxX - minX) / Math.max(1, enemyCount - 1);
         for (let i = 0; i < enemyCount; i++) {
-            enemies.push(new Knight(randomRange(50, canvas.width - 50), randomRange(50, 200), 'enemy'));
+            let x = minX + i * spacing + randomRange(-20, 20);
+            let y = randomRange(50, 200);
+            enemies.push(new Knight(x, y, 'enemy'));
         }
     }
 
