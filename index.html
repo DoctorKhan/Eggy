@@ -58,7 +58,8 @@
 <body>
 
 <div class="game-container">
-    <div id="score-board" class="score-board">SCORE: 0 | WAVE: 1</div>
+    <div id="score-board" class="score-board">SCORE: 0 | WAVE: 1 | LIVES: 3</div>
+    <div id="game-over" style="display:none; color:#ff4444; font-size:2em; margin-top:20px;">GAME OVER!<br>Press R to restart.</div>
     <canvas id="gameCanvas"></canvas>
     <div class="controls">Click Screen to Start Sound | Arrows: ← Left | → Right | ↑ Flap</div>
 </div>
@@ -86,6 +87,8 @@
     let particles = [];
     let score = 0;
     let wave = 1;
+let lives = 3;
+let gameOver = false;
     let frameCount = 0;
     let soundReady = false;
     let lastFlapTime = 0; // Cooldown timer for flap sound
@@ -542,7 +545,7 @@ class PowerUp {
     }
 
     function updateScore() {
-        scoreBoard.textContent = `SCORE: ${score} | WAVE: ${wave}`;
+    scoreBoard.textContent = `SCORE: ${score} | WAVE: ${wave} | LIVES: ${lives}`;
     }
     
     function checkWaveCompletion() {
@@ -600,6 +603,12 @@ class PowerUp {
     }
 
     function gameLoop() {
+        if (gameOver) {
+            document.getElementById('game-over').style.display = '';
+            return;
+        } else {
+            document.getElementById('game-over').style.display = 'none';
+        }
         // Power-up timers
         if (playerShielded) {
             playerShieldTimer--;
