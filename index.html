@@ -58,7 +58,7 @@
 <body>
 
 <div class="game-container">
-    <div id="score-board" class="score-board">SCORE: 0 | WAVE: 1 | LIVES: 3</div>
+    <div id="score-board" class="score-board">SCORE: 0 | WAVE: 1 | LIVES: 9</div>
     <div id="game-over" style="display:none; color:#ff4444; font-size:2em; margin-top:20px;">GAME OVER!<br>Press R to restart.</div>
     <canvas id="gameCanvas"></canvas>
     <div class="controls">Click Screen to Start Sound | Arrows: ← Left | → Right | ↑ Flap</div>
@@ -87,7 +87,7 @@
     let particles = [];
     let score = 0;
     let wave = 1;
-    let lives = 3;
+    let lives = 9;
     let gameOver = false;
     let frameCount = 0;
     let soundReady = false;
@@ -346,7 +346,7 @@
         canvas.height = 600; canvas.width = 800;
         platforms = [ { x: 100, y: canvas.height - 150, width: 200, height: 20 }, { x: canvas.width - 300, y: canvas.height - 150, width: 200, height: 20 }, { x: canvas.width / 2 - 150, y: canvas.height / 2, width: 300, height: 20 }, { x: 0, y: 200, width: 150, height: 20 }, { x: canvas.width - 150, y: 200, width: 150, height: 20 } ];
         player = new Knight(100, 100, 'player');
-        score = 0; wave = 1; lives = 3; gameOver = false;
+        score = 0; wave = 1; lives = 9; gameOver = false;
         startWave(wave);
     }
     
