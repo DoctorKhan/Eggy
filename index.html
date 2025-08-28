@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Good Knight Birdy</title>
+    <title>EggWar</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -71,8 +71,8 @@
     const scoreBoard = document.getElementById('score-board');
 
     // --- Game Constants ---
-    const GRAVITY = 0.3;
-    const FLAP_FORCE = -7;
+    const GRAVITY = 0.35;
+    const FLAP_FORCE = -8;
     const MOVE_SPEED = 4;
     const FRICTION = 0.92;
     const RESPAWN_TIME = 2000; 
@@ -199,11 +199,12 @@
     class Knight {
         constructor(x, y, type) {
             this.x = x; this.y = y; this.width = 40; this.height = 45; this.dx = 0; this.dy = 0; this.type = type;
-            this.riderColor = type === 'player' ? '#f0a048' : '#c0c0c0'; this.riderHighlight = type === 'player' ? '#FAD7A0' : '#FDFEFE';
-            this.birdBodyColor = type === 'player' ? '#D4AC0D' : '#27AE60'; this.birdBodyHighlight = type === 'player' ? '#F1C40F' : '#2ECC71';
+            this.riderColor = type === 'player' ? '#f0a048' : '#c0c0c0';
+            this.birdBodyColor = type === 'player' ? '#D4AC0D' : '#50c878';
+            this.birdWingColor = type === 'player' ? '#F1C40F' : '#58D68D';
             this.lanceColor = type === 'player' ? '#ffcc00' : '#e0e0e0';
             this.onPlatform = false; this.direction = 1; this.isDefeated = false;
-            this.respawnTimer = 0; this.animFrame = 0;
+            this.respawnTimer = 0; this.flapFrame = 0; this.walking = false;
         }
         
         draw() {
@@ -213,84 +214,60 @@
             if (this.direction === -1) ctx.scale(-1, 1);
 
             const isWalking = this.onPlatform && Math.abs(this.dx) > 0.1;
-            const legFrame = isWalking ? Math.sin(this.animFrame * 0.5) * 6 : 0;
+            const legFrame = isWalking ? Math.sin(frameCount * 0.5) * 5 : 0;
 
             // Legs
-            ctx.fillStyle = '#4A235A';
-            ctx.fillRect(-8 + legFrame, 18, 4, 8); // Back leg
-            ctx.fillRect(4 - legFrame, 18, 4, 8); // Front leg
-
-            // Body
+            ctx.strokeStyle = '#4A235A'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-5, 10); ctx.lineTo(-8 + legFrame, 20); // Back leg
+            ctx.moveTo(5, 10); ctx.lineTo(8 - legFrame, 20); // Front leg
+            ctx.stroke();
+            
+            // Bird Body
             ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
-            ctx.ellipse(0, 10, 20, 14, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = this.birdBodyHighlight; // Highlight
-            ctx.beginPath();
-            ctx.ellipse(0, 6, 18, 10, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, 5, 18, 12, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Neck
-            ctx.fillStyle = this.birdBodyColor;
+            // Wings
+            const wingY = this.walking ? 0 : Math.sin(this.flapFrame) * 8;
+            ctx.fillStyle = this.birdWingColor;
             ctx.beginPath();
-            ctx.moveTo(-5, 0);
-            ctx.quadraticCurveTo(-15, -15, -10, -20);
-            ctx.quadraticCurveTo(-5, -12, 0, 0);
+            ctx.moveTo(-10, 5);
+            ctx.quadraticCurveTo(0, 5 + wingY, 15, 5);
+            ctx.quadraticCurveTo(0, 15 + wingY, -10, 5);
             ctx.fill();
 
             // Head
             ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
-            ctx.arc(-12, -22, 8, 0, Math.PI * 2);
+            ctx.arc(-15, -5, 8, 0, Math.PI * 2);
             ctx.fill();
             // Beak
             ctx.fillStyle = '#F39C12';
             ctx.beginPath();
-            ctx.moveTo(-18, -22); ctx.lineTo(-28, -24); ctx.lineTo(-28, -20); ctx.closePath();
+            ctx.moveTo(-22, -5); ctx.lineTo(-32, -7); ctx.lineTo(-32, -3); ctx.closePath();
             ctx.fill();
 
-            // Wings
-            let wingAngle = 0;
-            if (!isWalking) {
-                const flapSequence = [0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0];
-                wingAngle = flapSequence[Math.floor(this.animFrame * 0.5) % flapSequence.length] * 0.6;
-            }
-            ctx.fillStyle = this.birdBodyHighlight;
-            ctx.save();
-            ctx.translate(0, 10);
-            ctx.rotate(wingAngle);
-            ctx.beginPath();
-            ctx.ellipse(0, 0, 22, 10, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-
-            // --- Rider Drawing ---
+            // Rider
             ctx.fillStyle = this.riderColor;
-            ctx.fillRect(-6, -15, 12, 20); // Torso
-            ctx.fillStyle = this.riderHighlight;
-            ctx.fillRect(-4, -15, 4, 20);
-            
-            ctx.fillStyle = this.riderColor;
+            ctx.fillRect(-5, -25, 10, 20); // Torso
             ctx.beginPath();
-            ctx.arc(0, -22, 8, 0, Math.PI * 2); // Head
-            ctx.fill();
-            ctx.fillStyle = this.riderHighlight;
-            ctx.beginPath();
-            ctx.arc(-2, -24, 4, 0, Math.PI * 2);
+            ctx.arc(0, -30, 7, 0, Math.PI * 2); // Head
             ctx.fill();
 
             // Lance
             ctx.strokeStyle = this.lanceColor; ctx.lineWidth = 4;
-            ctx.beginPath(); ctx.moveTo(10, -5); ctx.lineTo(45, -5); ctx.stroke();
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(45, -7, 3, 4);
+            ctx.beginPath();
+            ctx.moveTo(10, -15); ctx.lineTo(40, -15);
+            ctx.stroke();
 
             ctx.restore();
         }
 
         update() {
             if (this.isDefeated) { this.respawnTimer -= 1000 / 60; if (this.respawnTimer <= 0) this.respawn(); return; }
-            this.dy += GRAVITY; this.dx *= FRICTION; this.x += this.dx; this.y += this.dy; this.animFrame++;
+            this.dy += GRAVITY; this.dx *= FRICTION; this.x += this.dx; this.y += this.dy; this.flapFrame += 0.3;
             if (Math.abs(this.dx) > 0.1) this.direction = this.dx > 0 ? 1 : -1;
             if (this.x > canvas.width + this.width/2) this.x = -this.width/2; if (this.x < -this.width/2) this.x = canvas.width + this.width/2;
             this.onPlatform = false;
