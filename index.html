@@ -87,258 +87,125 @@
     let particles = [];
     let score = 0;
     let wave = 1;
-let lives = 9;
-let gameOver = false;
+    let lives = 3;
+    let gameOver = false;
     let frameCount = 0;
     let soundReady = false;
-    let lastFlapTime = 0; // Cooldown timer for flap sound
-    let lastDefeatTime = 0; // Cooldown timer for defeat sound
+    let lastFlapTime = 0;
     let playerSpeedBoost = 1;
-let playerShielded = false;
-let playerShieldTimer = 0;
-let playerDoublePoints = false;
-let playerDoubleTimer = 0;
-let playerMegaFlap = false;
-let playerMegaFlapTimer = 0;
+    let playerShielded = false;
+    let playerShieldTimer = 0;
+    let playerDoublePoints = false;
+    let playerDoubleTimer = 0;
+    let playerMegaFlap = false;
+    let playerMegaFlapTimer = 0;
     let speedBoostTimer = 0;
-    // --- Sound Engine ---
-    // Create reverb effect
-    const reverb = new Tone.Reverb({ decay: 2, preDelay: 0.1 }).toDestination();
-    // Create synths and connect to reverb
-    const flapSynth = new Tone.MembraneSynth({
-        pitchDecay: 0.01,
-        octaves: 4,
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 }
-    }).connect(reverb);
-    const defeatSynth = new Tone.NoiseSynth({
-        noise: { type: 'white' },
-        envelope: { attack: 0.01, decay: 0.08, sustain: 0, release: 0.05 }
-    }).connect(reverb);
-    defeatSynth.volume.value = -12;
-    const defeatLayerSynth = new Tone.Synth({
-        oscillator: { type: 'square' },
-        envelope: { attack: 0.02, decay: 0.08, sustain: 0, release: 0.05 }
-    }).connect(reverb);
-    defeatLayerSynth.volume.value = -10;
-    const eggSynth = new Tone.Synth({
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 }
-    }).connect(reverb);
-    const playerDefeatSynth = new Tone.MetalSynth({
-        frequency: 100,
-        envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
-        harmonicity: 5.1,
-        modulationIndex: 32,
-        resonance: 4000,
-        octaves: 1.5
-    }).connect(reverb);
+    let waveMessage = { text: "GET READY!", alpha: 1, timer: 120 };
 
+    // --- Sound Engine (with Pooling and Reverb) ---
     const sound = {
-        flapSynth,
-        defeatSynth,
-        defeatLayerSynth,
-        eggSynth,
-        playerDefeatSynth,
+        reverb: null,
+        defeatSoundPool: [],
+        poolIndex: 0,
+        flapSynth: null,
+        eggSynth: null,
+        playerDefeatSynth: null,
+
+        init() {
+            this.reverb = new Tone.Reverb({ decay: 1.5, wet: 0.2 }).toDestination();
+            this.flapSynth = new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 4, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 } }).toDestination();
+            this.eggSynth = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 } }).connect(this.reverb);
+            this.playerDefeatSynth = new Tone.MetalSynth({ frequency: 100, envelope: { attack: 0.001, decay: 0.4, release: 0.2 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }).connect(this.reverb);
+
+            for (let i = 0; i < 5; i++) {
+                const noise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } }).connect(this.reverb);
+                const metal = new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.05 }, harmonicity: 3.1, modulationIndex: 16, resonance: 2000, octaves: 1.5 }).connect(this.reverb);
+                this.defeatSoundPool.push({ noise, metal });
+            }
+        },
 
         playFlap: () => {
             if (!soundReady) return;
             const now = Tone.now();
-            // Add a 50ms cooldown to prevent Tone.js errors from rapid calls
             if (now > lastFlapTime + 0.05) {
-                // Randomize pitch and velocity
-                const note = Math.random() > 0.5 ? 'C2' : 'D2';
-                const velocity = 0.7 + Math.random() * 0.3;
-                sound.flapSynth.triggerAttackRelease(note, '8n', now, velocity);
+                sound.flapSynth.triggerAttackRelease('C2', '8n', now);
                 lastFlapTime = now;
             }
         },
         playDefeat: () => {
-            if(soundReady) {
-                const now = Tone.now();
-                // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
-                if (now > lastDefeatTime + 0.1 && now > lastDefeatTime) {
-                    try {
-                        sound.defeatSynth.triggerAttackRelease('0.1', undefined, now);
-                        // Randomize pitch for layer
-                        const defeatNote = Math.random() > 0.5 ? 'C3' : 'G2';
-                        sound.defeatLayerSynth.triggerAttackRelease(defeatNote, '16n', now, 0.6 + Math.random() * 0.4);
-                        lastDefeatTime = now;
-                    } catch (e) {
-                        // Prevent crash, skip sound if Tone.js throws
-                        lastDefeatTime = now;
-                    }
-                }
-            }
+            if (!soundReady) return;
+            const synths = sound.defeatSoundPool[sound.poolIndex];
+            synths.noise.triggerAttackRelease("0.1");
+            synths.metal.triggerAttackRelease("C4", "0.1");
+            sound.poolIndex = (sound.poolIndex + 1) % sound.defeatSoundPool.length;
         },
-        playEggCollect: () => {
-            if(soundReady) {
-                const now = Tone.now();
-                // Randomize note and velocity for variety
-                const notes = ['G5', 'A5', 'E5'];
-                const note = notes[Math.floor(Math.random() * notes.length)];
-                const velocity = 0.7 + Math.random() * 0.3;
-                sound.eggSynth.triggerAttackRelease(note, '8n', now, velocity);
-            }
-        },
-        playPlayerDefeat: () => {
-            if(soundReady) {
-                const now = Tone.now();
-                // Add a 100ms cooldown to prevent Tone.js errors from rapid calls
-                if (now > lastDefeatTime + 0.1 && now > lastDefeatTime) {
-                    try {
-                        sound.playerDefeatSynth.frequency.value = 80 + Math.random() * 40;
-                        sound.playerDefeatSynth.triggerAttackRelease(0.1, undefined, now);
-                        lastDefeatTime = now;
-                    } catch (e) {
-                        // Prevent crash, skip sound if Tone.js throws
-                        lastDefeatTime = now;
-                    }
-                }
-            }
-        }
+        playEggCollect: () => { if(soundReady) sound.eggSynth.triggerAttackRelease('G5', '8n'); },
+        playPlayerDefeat: () => { if(soundReady) sound.playerDefeatSynth.triggerAttackRelease(0.2); }
     };
     
-    // Try to start audio automatically on page load
-    window.addEventListener('DOMContentLoaded', async () => {
-        if (!soundReady) {
-            try {
-                await Tone.start();
-                soundReady = true;
-                console.log('Audio is ready');
-            } catch (e) {
-                console.warn('Audio auto-start blocked by browser. Click to enable.');
-            }
-        }
-    });
-    // Fallback: still allow click to start audio if needed
     canvas.addEventListener('click', async () => {
         if (!soundReady) {
             await Tone.start();
+            sound.init();
             soundReady = true;
             console.log('Audio is ready');
         }
     });
-
 
     // --- Utility Functions ---
     function randomRange(min, max) { return Math.random() * (max - min) + min; }
 
     // --- Game Object Classes ---
     class Particle {
-        constructor(x, y, color) {
-            this.x = x; this.y = y; this.color = color;
-            this.size = Math.random() * 5 + 2;
-            this.dx = randomRange(-3, 3); this.dy = randomRange(-5, 2);
-            this.life = 1;
-        }
-        update() {
-            this.x += this.dx; this.y += this.dy;
-            this.dy += GRAVITY * 0.5; this.life -= 0.03;
-        }
-        draw() {
-            ctx.fillStyle = `rgba(${this.color}, ${this.life})`;
-            ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
-        }
+        constructor(x, y, color) { this.x = x; this.y = y; this.color = color; this.size = Math.random() * 5 + 2; this.dx = randomRange(-3, 3); this.dy = randomRange(-5, 2); this.life = 1; }
+        update() { this.x += this.dx; this.y += this.dy; this.dy += GRAVITY * 0.5; this.life -= 0.03; }
+        draw() { ctx.fillStyle = `rgba(${this.color}, ${this.life})`; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); }
     }
     
     class Egg {
-        constructor(x, y) {
-            this.x = x; this.y = y; this.width = 15; this.height = 20;
-            this.dx = randomRange(-2, 2); this.dy = -2;
-            this.hatchTimer = EGG_HATCH_TIME;
-        }
+        constructor(x, y) { this.x = x; this.y = y; this.width = 15; this.height = 20; this.dx = randomRange(-2, 2); this.dy = -2; this.hatchTimer = EGG_HATCH_TIME; }
         update() {
-            this.dy += GRAVITY; this.x += this.dx; this.y += this.dy;
-            this.dx *= 0.98;
-            platforms.forEach(p => {
-                 if (this.y+this.height>p.y && this.y<p.y+p.height && this.x+this.width>p.x && this.x<p.x+p.width) {
-                    if (this.dy > 0) { this.y = p.y - this.height; this.dy *= -0.5; }
-                }
-            });
+            this.dy += GRAVITY; this.x += this.dx; this.y += this.dy; this.dx *= 0.98;
+            platforms.forEach(p => { if (this.y+this.height>p.y && this.y<p.y+p.height && this.x+this.width>p.x && this.x<p.x+p.width) { if (this.dy > 0) { this.y = p.y - this.height; this.dy *= -0.5; } } });
             if (this.y > canvas.height - this.height - 20) { this.y = canvas.height - this.height - 20; this.dy *= -0.5; }
             if (this.x > canvas.width) this.x = 0; if (this.x < 0) this.x = canvas.width;
             this.hatchTimer -= 1000 / 60;
             if (this.hatchTimer <= 0) this.hatch();
         }
-        draw() {
-            ctx.fillStyle = '#E0E0E0'; ctx.strokeStyle = '#A0A0A0'; ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.ellipse(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, this.height / 2, 0, 0, Math.PI * 2);
-            ctx.fill(); ctx.stroke();
-        }
-        hatch() {
-            enemies.push(new Knight(this.x, this.y, 'enemy'));
-            const index = eggs.indexOf(this);
-            if (index > -1) eggs.splice(index, 1);
-        }
+        draw() { ctx.fillStyle = '#E0E0E0'; ctx.strokeStyle = '#A0A0A0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, this.height / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+        hatch() { enemies.push(new Knight(this.x, this.y, 'enemy')); const index = eggs.indexOf(this); if (index > -1) eggs.splice(index, 1); }
     }
 
-class PowerUp {
-    constructor(x, y, type) {
-        this.x = x; this.y = y; this.size = 18;
-        this.type = type;
-        this.dy = -2;
-    }
-    update() {
-        this.dy += GRAVITY; this.y += this.dy;
-        // Platform collision
-        let onPlatform = false;
-        for (let p of platforms) {
-            if (
-                this.x > p.x && this.x < p.x + p.width &&
-                this.y + this.size > p.y && this.y < p.y + p.height
-            ) {
-                // Rest on top of platform
-                this.y = p.y - this.size;
-                this.dy = 0;
-                onPlatform = true;
-                break;
-            }
+    class PowerUp {
+        constructor(x, y, type) { this.x = x; this.y = y; this.size = 18; this.type = type; this.dy = -2; }
+        update() {
+            this.dy += GRAVITY; this.y += this.dy;
+            let onPlatform = false;
+            for (let p of platforms) { if (this.x > p.x && this.x < p.x + p.width && this.y + this.size > p.y && this.y < p.y + p.height) { this.y = p.y - this.size; this.dy = 0; onPlatform = true; break; } }
+            if (!onPlatform) { const floorY = canvas.height - 20 - this.size; if (this.y > floorY) { this.y = floorY; this.dy = 0; } }
+            if (this.x > canvas.width) this.x = 0; if (this.x < 0) this.x = canvas.width;
         }
-        // Stop at top of lava if not on platform
-        if (!onPlatform) {
-            const floorY = canvas.height - 20 - this.size;
-            if (this.y > floorY) {
-                this.y = floorY;
-                this.dy = 0;
-            }
+        draw() {
+            ctx.save(); ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            let color = '#00eaff', label = 'S';
+            if (this.type === 'shield') { color = '#ffeb3b'; label = 'D'; }
+            if (this.type === 'double') { color = '#ff4081'; label = '2x'; }
+            if (this.type === 'megaflap') { color = '#8bc34a'; label = 'F'; }
+            ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.fill(); ctx.restore();
+            ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(label, this.x, this.y + 5);
         }
-        if (this.x > canvas.width) this.x = 0; if (this.x < 0) this.x = canvas.width;
     }
-    draw() {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        // Color and label by type
-        let color = '#00eaff', label = 'S';
-        if (this.type === 'shield') { color = '#ffeb3b'; label = 'D'; }
-        if (this.type === 'double') { color = '#ff4081'; label = '2x'; }
-        if (this.type === 'megaflap') { color = '#8bc34a'; label = 'F'; }
-        ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 10;
-        ctx.fill();
-        ctx.restore();
-        ctx.font = 'bold 12px sans-serif';
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, this.x, this.y + 5);
-    }
-}
 
     class Knight {
         constructor(x, y, type) {
-            this.x = x; this.y = y; this.width = 40; this.height = 45;
-            this.dx = 0; this.dy = 0; this.type = type;
-            this.riderColor = type === 'player' ? '#f0a048' : '#c0c0c0';
-            this.birdBodyColor = type === 'player' ? '#D4AC0D' : '#50c878';
-            this.birdWingColor = type === 'player' ? '#F1C40F' : '#58D68D';
+            this.x = x; this.y = y; this.width = 40; this.height = 45; this.dx = 0; this.dy = 0; this.type = type;
+            this.riderColor = type === 'player' ? '#f0a048' : '#c0c0c0'; this.riderHighlight = type === 'player' ? '#FAD7A0' : '#FDFEFE';
+            this.birdBodyColor = type === 'player' ? '#D4AC0D' : '#27AE60'; this.birdBodyHighlight = type === 'player' ? '#F1C40F' : '#2ECC71';
             this.lanceColor = type === 'player' ? '#ffcc00' : '#e0e0e0';
             this.onPlatform = false; this.direction = 1; this.isDefeated = false;
-            this.respawnTimer = 0; this.flapFrame = 0; this.walking = false;
+            this.respawnTimer = 0; this.animFrame = 0;
         }
-
+        
         draw() {
             if (this.isDefeated) return;
             ctx.save();
@@ -346,339 +213,224 @@ class PowerUp {
             if (this.direction === -1) ctx.scale(-1, 1);
 
             const isWalking = this.onPlatform && Math.abs(this.dx) > 0.1;
-            const legFrame = isWalking ? Math.sin(frameCount * 0.5) * 5 : 0;
+            const animSpeed = isWalking ? 0.4 : 0.3;
+            const currentFrame = Math.floor(this.animFrame * animSpeed);
 
+            // --- Bird Drawing ---
             // Legs
-            ctx.strokeStyle = '#4A235A'; ctx.lineWidth = 4;
+            const legFrame = isWalking ? Math.sin(currentFrame) * 6 : 0;
+            ctx.fillStyle = '#4A235A';
+            ctx.fillRect(-8 + legFrame, 15, 4, 10); // Back leg
+            ctx.fillRect(4 - legFrame, 15, 4, 10); // Front leg
+
+            // Body
+            ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
-            ctx.moveTo(-5, 10); ctx.lineTo(-8 + legFrame, 20); // Back leg
-            ctx.moveTo(5, 10); ctx.lineTo(8 - legFrame, 20); // Front leg
-            ctx.stroke();
+            ctx.ellipse(0, 10, 20, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = this.birdBodyHighlight;
+            ctx.beginPath();
+            ctx.ellipse(0, 6, 18, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Neck & Head
+            ctx.fillStyle = this.birdBodyColor;
+            ctx.beginPath();
+            ctx.moveTo(-5, 0);
+            ctx.quadraticCurveTo(-15, -15, -10, -20);
+            ctx.quadraticCurveTo(-5, -12, 0, 0);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(-12, -22, 8, 0, Math.PI * 2);
+            ctx.fill();
             
-            // Bird Body
-            ctx.fillStyle = this.birdBodyColor;
-            ctx.beginPath();
-            ctx.ellipse(0, 5, 18, 12, 0, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Wings
-            const wingY = this.walking ? 0 : Math.sin(this.flapFrame) * 8;
-            ctx.fillStyle = this.birdWingColor;
-            ctx.beginPath();
-            ctx.moveTo(-10, 5);
-            ctx.quadraticCurveTo(0, 5 + wingY, 15, 5);
-            ctx.quadraticCurveTo(0, 15 + wingY, -10, 5);
-            ctx.fill();
-
-            // Head
-            ctx.fillStyle = this.birdBodyColor;
-            ctx.beginPath();
-            ctx.arc(-15, -5, 8, 0, Math.PI * 2);
-            ctx.fill();
             // Beak
             ctx.fillStyle = '#F39C12';
             ctx.beginPath();
-            ctx.moveTo(-22, -5); ctx.lineTo(-32, -7); ctx.lineTo(-32, -3); ctx.closePath();
+            ctx.moveTo(-18, -22); ctx.lineTo(-28, -24); ctx.lineTo(-28, -20); ctx.closePath();
             ctx.fill();
 
-            // Rider
-            ctx.fillStyle = this.riderColor;
-            ctx.fillRect(-5, -25, 10, 20); // Torso
+            // --- Frame-based Wing Animation ---
+            const wingFrames = [
+                { y: 5, h: 10 }, // Down
+                { y: 0, h: 12 }, // Middle
+                { y: -5, h: 10 },// Up
+                { y: 0, h: 12 }  // Middle
+            ];
+            const wingFrame = isWalking ? wingFrames[1] : wingFrames[currentFrame % wingFrames.length];
+            
+            ctx.fillStyle = this.birdBodyHighlight;
             ctx.beginPath();
-            ctx.arc(0, -30, 7, 0, Math.PI * 2); // Head
+            ctx.ellipse(5, wingFrame.y, 20, wingFrame.h, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+
+            // --- Rider Drawing ---
+            ctx.fillStyle = this.riderColor;
+            ctx.fillRect(-6, -15, 12, 20); // Torso
+            ctx.fillStyle = this.riderHighlight;
+            ctx.fillRect(-4, -15, 4, 20);
+            
+            ctx.fillStyle = this.riderColor;
+            ctx.beginPath();
+            ctx.arc(0, -22, 8, 0, Math.PI * 2); // Head
+            ctx.fill();
+            ctx.fillStyle = this.riderHighlight;
+            ctx.beginPath();
+            ctx.arc(-2, -24, 4, 0, Math.PI * 2);
             ctx.fill();
 
             // Lance
             ctx.strokeStyle = this.lanceColor; ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(10, -15); ctx.lineTo(40, -15);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(10, -5); ctx.lineTo(45, -5); ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(45, -7, 3, 4);
 
             ctx.restore();
         }
 
         update() {
-            if (this.isDefeated) {
-                this.respawnTimer -= 1000 / 60;
-                if (this.respawnTimer <= 0) this.respawn();
-                return;
-            }
-
-            this.dy += GRAVITY; this.dx *= FRICTION;
-            this.x += this.dx; this.y += this.dy;
-            this.flapFrame += 0.3;
+            if (this.isDefeated) { this.respawnTimer -= 1000 / 60; if (this.respawnTimer <= 0) this.respawn(); return; }
+            this.dy += GRAVITY; this.dx *= FRICTION; this.x += this.dx; this.y += this.dy; this.animFrame++;
             if (Math.abs(this.dx) > 0.1) this.direction = this.dx > 0 ? 1 : -1;
-            if (this.x > canvas.width + this.width/2) this.x = -this.width/2;
-            if (this.x < -this.width/2) this.x = canvas.width + this.width/2;
-
+            if (this.x > canvas.width + this.width/2) this.x = -this.width/2; if (this.x < -this.width/2) this.x = canvas.width + this.width/2;
             this.onPlatform = false;
-            platforms.forEach(p => {
-                if (this.y+this.height/2>p.y && this.y-this.height/2<p.y+p.height && this.x+this.width/2>p.x && this.x-this.width/2<p.x+p.width) {
-                    if (this.dy > 0 && (this.y + this.height/2 - this.dy) <= p.y) {
-                        this.y = p.y - this.height/2; this.dy = 0; this.onPlatform = true;
-                    }
-                }
-            });
-
-            if (this.y > canvas.height - this.height/2 - 20) {
-                if(this.type === 'player') this.defeat();
-                else { const index = enemies.indexOf(this); if (index > -1) enemies.splice(index, 1); }
-                createExplosion(this.x, this.y, '255, 80, 80');
-            }
+            platforms.forEach(p => { if (this.y+this.height/2>p.y && this.y-this.height/2<p.y+p.height && this.x+this.width/2>p.x && this.x-this.width/2<p.x+p.width) { if (this.dy > 0 && (this.y + this.height/2 - this.dy) <= p.y) { this.y = p.y - this.height/2; this.dy = 0; this.onPlatform = true; } } });
+            if (this.y > canvas.height - this.height/2 - 20) { if(this.type === 'player') this.defeat(); else { const i = enemies.indexOf(this); if (i > -1) enemies.splice(i, 1); } createExplosion(this.x, this.y, '255, 80, 80'); }
         }
-
-        flap() {
-            if (this.onPlatform || this.dy > -FLAP_FORCE * 0.5) {
-                this.dy = FLAP_FORCE;
-                sound.playFlap();
-            }
-        }
-
+        flap() { if (this.onPlatform || this.dy > -FLAP_FORCE * 0.5) { this.dy = FLAP_FORCE; sound.playFlap(); } }
         defeat() {
             if (this.type === 'player') {
-                this.isDefeated = true; this.respawnTimer = RESPAWN_TIME;
-                createExplosion(this.x, this.y, '240, 160, 72');
-                score = Math.max(0, score - 50);
-                sound.playPlayerDefeat();
+                if (playerShielded) { playerShielded = false; return; }
+                lives--;
                 updateScore();
+                if (lives <= 0) { gameOver = true; } 
+                else { this.isDefeated = true; this.respawnTimer = RESPAWN_TIME; createExplosion(this.x, this.y, '240, 160, 72'); sound.playPlayerDefeat(); }
             } else {
+                let points = playerDoublePoints ? 200 : 100;
+                score += points;
                 eggs.push(new Egg(this.x, this.y));
-                const index = enemies.indexOf(this);
-                if (index > -1) enemies.splice(index, 1);
-                createExplosion(this.x, this.y, '80, 200, 120');
-                sound.playDefeat();
+                const i = enemies.indexOf(this); if (i > -1) enemies.splice(i, 1);
+                createExplosion(this.x, this.y, '80, 200, 120'); sound.playDefeat();
             }
+            updateScore();
         }
-
-        respawn() {
-            this.isDefeated = false; this.x = Math.random() * canvas.width; this.y = 50;
-            this.dx = 0; this.dy = 0;
-        }
+        respawn() { this.isDefeated = false; this.x = Math.random() * canvas.width; this.y = 50; this.dx = 0; this.dy = 0; }
     }
 
     function updateEnemyAI(enemy, target) {
         if (enemy.isDefeated) return;
-        // More varied AI
-        if (Math.random() < 0.02) enemy.flap(); // Random flap
-        if (target.y < enemy.y && enemy.y > canvas.height * 0.5 && Math.random() < 0.03) enemy.flap(); // Flap if player is above
-
-        // --- Collision avoidance ---
-        // Allow clustering if global flag is set
-        if (!window.allowEnemyClustering) {
-            enemies.forEach(other => {
-                if (other !== enemy && !other.isDefeated) {
-                    const dx = enemy.x - other.x;
-                    const dy = enemy.y - other.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 40) { // Repel if too close
-                        enemy.dx += dx * 0.01;
-                        enemy.dy += dy * 0.01;
-                    }
-                }
-            });
-        }
-
-    const targetX = target.isDefeated ? canvas.width / 2 : target.x;
-    const speed = (enemy.speedBoost || 1);
-    if (targetX > enemy.x) enemy.dx += (0.15 + Math.random() * 0.1) * speed;
-    else enemy.dx -= (0.15 + Math.random() * 0.1) * speed;
-    enemy.dx = Math.max(-MOVE_SPEED * speed, Math.min(MOVE_SPEED * speed, enemy.dx));
+        if (Math.random() < 0.02) enemy.flap();
+        if (target.y < enemy.y && enemy.y > canvas.height * 0.5 && Math.random() < 0.03) enemy.flap();
+        const targetX = target.isDefeated ? canvas.width / 2 : target.x;
+        const speed = (enemy.speedBoost || 1);
+        if (targetX > enemy.x) enemy.dx += (0.15 + Math.random() * 0.1) * speed; else enemy.dx -= (0.15 + Math.random() * 0.1) * speed;
+        enemy.dx = Math.max(-MOVE_SPEED * speed, Math.min(MOVE_SPEED * speed, enemy.dx));
     }
 
     function checkCollisions() {
         enemies.forEach(enemy => {
             if (player.isDefeated || enemy.isDefeated) return;
-            const dx = player.x - enemy.x; const dy = player.y - enemy.y;
-            const distance = Math.sqrt(dx*dx + dy*dy);
-            if (distance < player.width/2 + enemy.width/2) {
-                if (player.y < enemy.y - 5) {
-                    let points = 100;
-                    if (playerDoublePoints) points *= 2;
-                    score += points; enemy.defeat(); player.dy = -4;
-                } else {
-                    if (!playerShielded) {
-                        lives--;
-                        updateScore();
-                        if (lives <= 0) {
-                            gameOver = true;
-                        } else {
-                            player.defeat();
-                        }
-                    }
-                    enemy.dy = -4;
-                }
-                updateScore();
-            }
+            const dx = player.x - enemy.x; const dy = player.y - enemy.y; const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < player.width/2 + enemy.width/2) { if (player.y < enemy.y - 5) { enemy.defeat(); player.dy = -4; } else { player.defeat(); enemy.dy = -4; } }
         });
-        eggs.forEach((egg, index) => {
-             const dx = player.x-(egg.x+egg.width/2); const dy = player.y-(egg.y+egg.height/2);
-             const distance = Math.sqrt(dx*dx + dy*dy);
-             if (distance < player.width/2 + egg.width) {
-                 score += 25; eggs.splice(index, 1);
-                 sound.playEggCollect();
-                 updateScore();
-             }
-        });
-        // Power-up collision
+        eggs.forEach((egg, i) => { const dx = player.x-(egg.x+egg.width/2); const dy = player.y-(egg.y+egg.height/2); const dist = Math.sqrt(dx*dx + dy*dy); if (dist < player.width/2 + egg.width) { score += 25; eggs.splice(i, 1); sound.playEggCollect(); updateScore(); } });
         powerUps.forEach((pu, idx) => {
-            const dx = player.x - pu.x;
-            const dy = player.y - pu.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
+            const dx = player.x - pu.x; const dy = player.y - pu.y; const dist = Math.sqrt(dx*dx + dy*dy);
             if (dist < player.width/2 + pu.size) {
-                if (pu.type === 'speed') {
-                    playerSpeedBoost = 2;
-                    speedBoostTimer = 300; // frames (~5s)
-                }
-                if (pu.type === 'shield') {
-                    playerShielded = true;
-                    playerShieldTimer = 300;
-                }
-                if (pu.type === 'double') {
-                    playerDoublePoints = true;
-                    playerDoubleTimer = 300;
-                }
-                if (pu.type === 'megaflap') {
-                    playerMegaFlap = true;
-                    playerMegaFlapTimer = 200;
-                }
+                if (pu.type === 'speed') { playerSpeedBoost = 2; speedBoostTimer = 300; }
+                if (pu.type === 'shield') { playerShielded = true; playerShieldTimer = 300; }
+                if (pu.type === 'double') { playerDoublePoints = true; playerDoubleTimer = 300; }
+                if (pu.type === 'megaflap') { playerMegaFlap = true; playerMegaFlapTimer = 200; }
                 powerUps.splice(idx, 1);
             }
         });
     }
     
-    function createExplosion(x, y, color) {
-        for (let i = 0; i < 30; i++) particles.push(new Particle(x, y, color));
-    }
-
-    function updateScore() {
-    scoreBoard.textContent = `SCORE: ${score} | WAVE: ${wave} | LIVES: ${lives}`;
-    }
-    
-    function checkWaveCompletion() {
-        if (enemies.length === 0 && eggs.length === 0) {
-            wave++; startWave(wave); updateScore();
-        }
-    }
+    function createExplosion(x, y, color) { for (let i = 0; i < 30; i++) particles.push(new Particle(x, y, color)); }
+    function updateScore() { scoreBoard.textContent = `SCORE: ${score} | WAVE: ${wave} | LIVES: ${lives}`; }
+    function checkWaveCompletion() { if (enemies.length === 0 && eggs.length === 0 && waveMessage.alpha <= 0) { wave++; startWave(wave); } }
 
     function startWave(waveNumber) {
-    enemies = []; eggs = [];
-    powerUps = [];
-        // Increase enemy count and speed with wave
-        const enemyCount = 2 + waveNumber + Math.floor(waveNumber/2);
-        const enemySpeedBoost = 1 + waveNumber * 0.1;
-        // Spread out spawn positions horizontally
-        const minX = 50, maxX = canvas.width - 50;
-        const spacing = (maxX - minX) / Math.max(1, enemyCount - 1);
-        for (let i = 0; i < enemyCount; i++) {
-            let x = minX + i * spacing + randomRange(-20, 20);
-            let y = randomRange(50, 200);
-            const enemy = new Knight(x, y, 'enemy');
-            enemy.speedBoost = enemySpeedBoost;
-            enemies.push(enemy);
+        enemies = []; eggs = []; powerUps = [];
+        const enemyCount = 2 + waveNumber;
+        const enemySpeedBoost = 1 + waveNumber * 0.05;
+        for (let i = 0; i < enemyCount; i++) { const enemy = new Knight(randomRange(50, canvas.width - 50), randomRange(50, 200), 'enemy'); enemy.speedBoost = enemySpeedBoost; enemies.push(enemy); }
+        if (Math.random() < 0.3 + waveNumber * 0.05) {
+            const p = platforms[Math.floor(Math.random() * platforms.length)];
+            let types = ['speed'];
+            if (waveNumber > 2) types.push('shield'); if (waveNumber > 4) types.push('double'); if (waveNumber > 6) types.push('megaflap');
+            powerUps.push(new PowerUp(randomRange(p.x + 20, p.x + p.width - 20), p.y - 18, types[Math.floor(Math.random() * types.length)]));
         }
-    // Power-ups increase with wave number to balance difficulty
-    const powerUpCount = 1 + Math.floor(waveNumber / 2);
-        // Unlock more power-up types as waves increase
-        let types = ['speed'];
-        if (waveNumber > 2) types.push('shield');
-        if (waveNumber > 4) types.push('double');
-        if (waveNumber > 6) types.push('megaflap');
-        for (let i = 0; i < powerUpCount; i++) {
-            // Pick a random platform
-            const platform = platforms[Math.floor(Math.random() * platforms.length)];
-            // Place power-up randomly along platform width
-            let x = randomRange(platform.x + 20, platform.x + platform.width - 20);
-            let y = platform.y - 18; // 18 is power-up radius, so it sits on top
-            // Pick a random type from unlocked types
-            let type = types[Math.floor(Math.random() * types.length)];
-            powerUps.push(new PowerUp(x, y, type));
-        }
+        waveMessage = { text: `WAVE ${waveNumber}`, alpha: 1, timer: 120 };
+        updateScore();
     }
 
     function init() {
         canvas.height = 600; canvas.width = 800;
-        platforms = [
-            { x: 100, y: canvas.height - 150, width: 200, height: 20 },
-            { x: canvas.width - 300, y: canvas.height - 150, width: 200, height: 20 },
-            { x: canvas.width / 2 - 150, y: canvas.height / 2, width: 300, height: 20 },
-            { x: 0, y: 200, width: 150, height: 20 },
-            { x: canvas.width - 150, y: 200, width: 150, height: 20 }
-        ];
+        platforms = [ { x: 100, y: canvas.height - 150, width: 200, height: 20 }, { x: canvas.width - 300, y: canvas.height - 150, width: 200, height: 20 }, { x: canvas.width / 2 - 150, y: canvas.height / 2, width: 300, height: 20 }, { x: 0, y: 200, width: 150, height: 20 }, { x: canvas.width - 150, y: 200, width: 150, height: 20 } ];
         player = new Knight(100, 100, 'player');
-        score = 0; wave = 1; startWave(wave); updateScore();
+        score = 0; wave = 1; lives = 3; gameOver = false;
+        startWave(wave);
     }
+    
+    function drawPlatform(p) { ctx.fillStyle = '#6D4C41'; ctx.fillRect(p.x, p.y, p.width, p.height); ctx.fillStyle = '#8D6E63'; ctx.fillRect(p.x, p.y, p.width, p.height / 3); ctx.fillStyle = 'rgba(0,0,0,0.1)'; for(let i = 0; i < p.width / 10; i++) { ctx.fillRect(p.x + i * 10 + Math.random() * 5, p.y + Math.random() * p.height, 5, 5); } }
+    function drawLava() { ctx.fillStyle = '#d44'; ctx.fillRect(0, canvas.height - 20, canvas.width, 20); for(let i = 0; i < canvas.width / 30; i++) { const x = (i * 30 + frameCount * 0.5) % canvas.width; const y = canvas.height - 10 + Math.sin(frameCount * 0.1 + i) * 5; const radius = 2 + Math.sin(frameCount * 0.05 + i) * 2; ctx.fillStyle = `rgba(255, 165, 0, ${0.5 + Math.sin(frameCount * 0.1 + i) * 0.2})`; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill(); } }
 
     function gameLoop() {
         if (gameOver) {
-            document.getElementById('game-over').style.display = '';
-            return;
-        } else {
-            document.getElementById('game-over').style.display = 'none';
+            document.getElementById('game-over').style.display = 'block';
+            return; 
         }
-        // Power-up timers
-        if (playerShielded) {
-            playerShieldTimer--;
-            if (playerShieldTimer <= 0) playerShielded = false;
-        }
-        if (playerDoublePoints) {
-            playerDoubleTimer--;
-            if (playerDoubleTimer <= 0) playerDoublePoints = false;
-        }
-        if (playerMegaFlap) {
-            playerMegaFlapTimer--;
-            if (playerMegaFlapTimer <= 0) playerMegaFlap = false;
-        }
-        frameCount++;
+        frameCount++; 
         handleInput();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = '#d44';
-        ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
-        
-        ctx.fillStyle = '#7b583f';
-        platforms.forEach(p => { ctx.fillRect(p.x, p.y, p.width, p.height); });
-
-        // Power-up timer logic
-        if (playerSpeedBoost > 1) {
-            speedBoostTimer--;
-            if (speedBoostTimer <= 0) playerSpeedBoost = 1;
-        }
+        drawLava(); platforms.forEach(drawPlatform);
+        if (speedBoostTimer > 0) speedBoostTimer--; else playerSpeedBoost = 1;
+        if (playerShieldTimer > 0) playerShieldTimer--; else playerShielded = false;
+        if (playerDoubleTimer > 0) playerDoubleTimer--; else playerDoublePoints = false;
+        if (playerMegaFlapTimer > 0) playerMegaFlapTimer--; else playerMegaFlap = false;
         player.update(); player.draw();
         enemies.forEach(e => { updateEnemyAI(e, player); e.update(); e.draw(); });
         eggs.forEach(e => { e.update(); e.draw(); });
         powerUps.forEach(pu => { pu.update(); pu.draw(); });
         particles.forEach((p, i) => { p.update(); p.draw(); if (p.life <= 0) particles.splice(i, 1); });
-
+        if (waveMessage.alpha > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${waveMessage.alpha})`; ctx.font = '32px "Press Start 2P"'; ctx.textAlign = 'center'; ctx.fillText(waveMessage.text, canvas.width / 2, canvas.height / 2 - 50); waveMessage.timer--; if(waveMessage.timer <= 0) { waveMessage.alpha -= 0.02; } }
         checkCollisions(); checkWaveCompletion();
         requestAnimationFrame(gameLoop);
     }
 
-    const keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false };
-    window.addEventListener('keydown', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = true; } });
-    window.addEventListener('keyup', (e) => { if (keys[e.key] !== undefined) { e.preventDefault(); keys[e.key] = false; } });
+    const keys = { "ArrowUp": false, "ArrowLeft": false, "ArrowRight": false, "r": false };
+    
+    function restartGame() {
+        document.getElementById('game-over').style.display = 'none';
+        init();
+        requestAnimationFrame(gameLoop);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        const key = e.key;
+        if (keys[key] !== undefined) {
+            e.preventDefault();
+            keys[key] = true;
+        }
+        if ((key === 'r' || key === 'R') && gameOver) {
+            restartGame();
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        if (keys[e.key] !== undefined) {
+            e.preventDefault();
+            keys[e.key] = false;
+        }
+    });
     
     function handleInput() {
-        // Restart game if game over
-        if (gameOver && keys['r']) {
-            lives = 3;
-            score = 0;
-            wave = 1;
-            gameOver = false;
-            updateScore();
-            init();
-        }
-    if (player.isDefeated) return;
-        if (keys.ArrowUp) {
-            if (playerMegaFlap) {
-                player.dy = FLAP_FORCE * 1.7;
-                sound.playFlap();
-            } else {
-                player.flap();
-            }
-        }
-    if (keys.ArrowLeft) player.dx -= 0.8 * playerSpeedBoost;
-    if (keys.ArrowRight) player.dx += 0.8 * playerSpeedBoost;
-    player.dx = Math.max(-MOVE_SPEED * playerSpeedBoost, Math.min(MOVE_SPEED * playerSpeedBoost, player.dx));
+        if (player.isDefeated || gameOver) return;
+        if (keys.ArrowUp) { if (playerMegaFlap) { player.dy = FLAP_FORCE * 1.7; sound.playFlap(); } else { player.flap(); } }
+        if (keys.ArrowLeft) player.dx -= 0.8 * playerSpeedBoost;
+        if (keys.ArrowRight) player.dx += 0.8 * playerSpeedBoost;
+        player.dx = Math.max(-MOVE_SPEED * playerSpeedBoost, Math.min(MOVE_SPEED * playerSpeedBoost, player.dx));
     }
 
     window.addEventListener('resize', init);
