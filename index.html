@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EggWar</title>
+    <title>Good Knight Birdy</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -71,8 +71,8 @@
     const scoreBoard = document.getElementById('score-board');
 
     // --- Game Constants ---
-    const GRAVITY = 0.25;
-    const FLAP_FORCE = -6.5;
+    const GRAVITY = 0.3;
+    const FLAP_FORCE = -7;
     const MOVE_SPEED = 4;
     const FRICTION = 0.92;
     const RESPAWN_TIME = 2000; 
@@ -213,57 +213,56 @@
             if (this.direction === -1) ctx.scale(-1, 1);
 
             const isWalking = this.onPlatform && Math.abs(this.dx) > 0.1;
-            const animSpeed = isWalking ? 0.4 : 0.3;
-            const currentFrame = Math.floor(this.animFrame * animSpeed);
+            const legFrame = isWalking ? Math.sin(this.animFrame * 0.5) * 6 : 0;
 
-            // --- Bird Drawing ---
             // Legs
-            const legFrame = isWalking ? Math.sin(currentFrame) * 6 : 0;
             ctx.fillStyle = '#4A235A';
-            ctx.fillRect(-8 + legFrame, 15, 4, 10); // Back leg
-            ctx.fillRect(4 - legFrame, 15, 4, 10); // Front leg
+            ctx.fillRect(-8 + legFrame, 18, 4, 8); // Back leg
+            ctx.fillRect(4 - legFrame, 18, 4, 8); // Front leg
 
             // Body
             ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
             ctx.ellipse(0, 10, 20, 14, 0, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = this.birdBodyHighlight;
+            ctx.fillStyle = this.birdBodyHighlight; // Highlight
             ctx.beginPath();
             ctx.ellipse(0, 6, 18, 10, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Neck & Head
+            // Neck
             ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
             ctx.moveTo(-5, 0);
             ctx.quadraticCurveTo(-15, -15, -10, -20);
             ctx.quadraticCurveTo(-5, -12, 0, 0);
             ctx.fill();
+
+            // Head
+            ctx.fillStyle = this.birdBodyColor;
             ctx.beginPath();
             ctx.arc(-12, -22, 8, 0, Math.PI * 2);
             ctx.fill();
-            
             // Beak
             ctx.fillStyle = '#F39C12';
             ctx.beginPath();
             ctx.moveTo(-18, -22); ctx.lineTo(-28, -24); ctx.lineTo(-28, -20); ctx.closePath();
             ctx.fill();
 
-            // --- Frame-based Wing Animation ---
-            const wingFrames = [
-                { y: 5, h: 10 }, // Down
-                { y: 0, h: 12 }, // Middle
-                { y: -5, h: 10 },// Up
-                { y: 0, h: 12 }  // Middle
-            ];
-            const wingFrame = isWalking ? wingFrames[1] : wingFrames[currentFrame % wingFrames.length];
-            
+            // Wings
+            let wingAngle = 0;
+            if (!isWalking) {
+                const flapSequence = [0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0];
+                wingAngle = flapSequence[Math.floor(this.animFrame * 0.5) % flapSequence.length] * 0.6;
+            }
             ctx.fillStyle = this.birdBodyHighlight;
+            ctx.save();
+            ctx.translate(0, 10);
+            ctx.rotate(wingAngle);
             ctx.beginPath();
-            ctx.ellipse(5, wingFrame.y, 20, wingFrame.h, -0.2, 0, Math.PI * 2);
+            ctx.ellipse(0, 0, 22, 10, 0, 0, Math.PI * 2);
             ctx.fill();
-
+            ctx.restore();
 
             // --- Rider Drawing ---
             ctx.fillStyle = this.riderColor;
@@ -400,7 +399,7 @@
         requestAnimationFrame(gameLoop);
     }
 
-    const keys = { "ArrowUp": false, "ArrowLeft": false, "ArrowRight": false, "r": false };
+    const keys = { "ArrowUp": false, "ArrowLeft": false, "ArrowRight": false, "r": false, "R": false };
     
     function restartGame() {
         document.getElementById('game-over').style.display = 'none';
@@ -410,18 +409,19 @@
 
     window.addEventListener('keydown', (e) => {
         const key = e.key;
-        if (keys[key] !== undefined) {
+        if (keys.hasOwnProperty(key)) {
             e.preventDefault();
             keys[key] = true;
         }
-        if ((key === 'r' || key === 'R') && gameOver) {
+        if (key.toLowerCase() === 'r' && gameOver) {
             restartGame();
         }
     });
     window.addEventListener('keyup', (e) => {
-        if (keys[e.key] !== undefined) {
+        const key = e.key;
+        if (keys.hasOwnProperty(key)) {
             e.preventDefault();
-            keys[e.key] = false;
+            keys[key] = false;
         }
     });
     
