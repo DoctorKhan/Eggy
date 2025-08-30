@@ -15,11 +15,12 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             background-color: #0a0a0a;
             font-family: 'Press-Start-2P', cursive;
             color: white;
-            overflow: hidden;
+            /* Allow scrolling on mobile */
+            overflow-x: hidden;
         }
         .game-container {
             display: flex;
@@ -31,14 +32,19 @@
             background: #111;
             padding: 20px;
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+            max-width: 95vw;
+            width: 100%;
         }
         canvas {
             background-color: #000;
             border: 2px solid #55e;
             border-radius: 8px;
             box-shadow: 0 0 15px rgba(85, 85, 238, 0.5);
-            max-width: 100%;
-            max-height: 80vh;
+            display: block;
+            margin: 0 auto;
+            max-width: 800px;
+            width: 100%;
+            height: auto;
             aspect-ratio: 4 / 3;
             cursor: pointer;
         }
@@ -46,6 +52,33 @@
             margin-top: 15px;
             font-size: 1em;
             color: #ccc;
+            word-break: break-word;
+            padding: 0 5px;
+        }
+        /* Responsive styles for mobile */
+        @media (max-width: 600px) {
+            body {
+                font-size: 0.7em;
+            }
+            .game-container {
+                padding: 8px;
+                border-width: 2px;
+                border-radius: 6px;
+            }
+            .score-board {
+                font-size: 1em;
+                margin-bottom: 8px;
+            }
+            .controls {
+                font-size: 0.8em;
+                margin-top: 8px;
+            }
+            canvas {
+                max-width: 98vw;
+                max-height: 40vh;
+                border-width: 1px;
+                border-radius: 4px;
+            }
         }
         .score-board {
             font-size: 1.5em;
@@ -127,9 +160,11 @@
         playFlap: () => {
             if (!soundReady) return;
             const now = Tone.now();
-            if (now > lastFlapTime + 0.05) {
-                sound.flapSynth.triggerAttackRelease('C2', '8n', now);
-                lastFlapTime = now;
+            // Add a small buffer to ensure strictly increasing start times
+            const nextTime = Math.max(now, lastFlapTime + 0.06);
+            if (nextTime > lastFlapTime) {
+                sound.flapSynth.triggerAttackRelease('C2', '8n', nextTime);
+                lastFlapTime = nextTime;
             }
         },
         playDefeat: () => {
