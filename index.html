@@ -402,7 +402,26 @@
         if (playerDoubleTimer > 0) playerDoubleTimer--; else playerDoublePoints = false;
         if (playerMegaFlapTimer > 0) playerMegaFlapTimer--; else playerMegaFlap = false;
         player.update(); player.draw();
-        enemies.forEach(e => { updateEnemyAI(e, player); e.update(); e.draw(); });
+        enemies.forEach(e => { updateEnemyAI(e, player); e.update(); });
+        // --- Enemy separation to prevent stacking ---
+        for (let i = 0; i < enemies.length; i++) {
+            for (let j = i + 1; j < enemies.length; j++) {
+                const a = enemies[i], b = enemies[j];
+                if (a.isDefeated || b.isDefeated) continue;
+                const dx = a.x - b.x;
+                const dy = a.y - b.y;
+                const minDist = (a.width + b.width) / 2 * 0.8;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < minDist && dist > 0) {
+                    // Push apart horizontally
+                    const push = (minDist - dist) / 2;
+                    const angle = Math.atan2(dy, dx);
+                    a.x += Math.cos(angle) * push;
+                    b.x -= Math.cos(angle) * push;
+                }
+            }
+        }
+        enemies.forEach(e => e.draw());
         eggs.forEach(e => { e.update(); e.draw(); });
         powerUps.forEach(pu => { pu.update(); pu.draw(); });
         particles.forEach((p, i) => { p.update(); p.draw(); if (p.life <= 0) particles.splice(i, 1); });
